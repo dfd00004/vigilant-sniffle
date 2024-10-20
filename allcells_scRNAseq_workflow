@@ -15,15 +15,29 @@ mg = mygene.MyGeneInfo()
 # Fetch gene symbols for your Ensembl IDs
 ens_ids = adata.var_names.tolist()  # Get the list of Ensembl IDs
 gene_info = mg.querymany(ens_ids, scopes='ensembl.gene', fields='symbol', species='mouse')
-
-# Convert results into a dictionary with Ensembl IDs as keys and gene symbols as values
 gene_symbol_dict = {item['query']: item.get('symbol', item['query']) for item in gene_info}
-
-# Remap adata.var_names with the gene symbols
 adata.var['gene_symbols'] = [gene_symbol_dict[ens_id] for ens_id in adata.var_names]
-
-# Optionally set the gene symbols as var_names (so that dotplots and other functions use gene symbols)
 adata.var_names = adata.var['gene_symbols']
 adata.var_names_make_unique()
+
+#Produce list of the cell types for subsetting data
+print(adata.obs['majorclass'])
+
+#Generate df of undesired values from adata.obs['majorclass']
+undesired_majorclass = ['Endothelial','Pericyte','Astrocyte','Microglia']
+subset_adata = adata[~adata.obs['majorclass'].isin(undesired_majorclass)]
+
+#Rename values of majorclass (Where col1 is the orginal majorclass name and col2 is the new desired majorclass name, col3 contains the gene for plotting and the order of col2 determines the order of the dotplot)
+df_rgo=pd.read_csv('/content/renamer_genes_order.csv')
+mapping = dict(zip(df_rgo['majorclass'], df_rgo['new_major_class']))
+subset_adata.obs['majorclass'] = subset_adata.obs['majorclass'].replace(mapping)
+
+#Generate a dotplot of genes of interest using each gene as its own scale
+genes_of_interest = df_rgo['gene'].tolist()
+desired_order = df_rgo['new_major_class'].tolist() # Modify as per your group names
+subset_adata.obs['majorclass'] = subset_adata.obs['majorclass'].cat.reorder_categories(desired_order, ordered=True)
+sc.pl.dotplot(subset_adata, genes_of_interest,groupby='majorclass',use_raw=False,figsize=(6,5),standard_scale='var')
+
+
 
 
