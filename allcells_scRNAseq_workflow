@@ -1,58 +1,29 @@
-from rdkit import Chem
-from rdkit.Chem import AllChem
-from rdkit.Chem import Draw
+!pip install scanpy mygene
+import scanpy as sc
+import numpy as np
 import pandas as pd
-import os
+import matplotlib.pyplot as plt
+import seaborn as sns
+import mygene
 
+#Read the datafile containing data of interest
+adata=sc.read('allcellsmrca.h5ad')
 
-#Load CSV file containing compounds of interest, requires that at least one column contains the compound name, and another contains the SMILES
-df = pd.read_csv("compounds.csv") 
-smiles_column = "Smiles" #Adjust as needed
-id_column = "Name"  #Adjust as needed
+# Initialize the mygene query
+mg = mygene.MyGeneInfo()
 
-#Prepare directory for batch processing of compounds separating by every 1000 compounds
-output_base_dir = "sdf_files"
-compounds_per_folder = 1000  #Set limit for compounds per folder
-folder_count = 1
-compound_count = 0
+# Fetch gene symbols for your Ensembl IDs
+ens_ids = adata.var_names.tolist()  # Get the list of Ensembl IDs
+gene_info = mg.querymany(ens_ids, scopes='ensembl.gene', fields='symbol', species='mouse')
 
-#Generate the first folder
-current_output_dir = os.path.join(output_base_dir, f"batch_{folder_count}")
-if not os.path.exists(current_output_dir):
-    os.makedirs(current_output_dir)
+# Convert results into a dictionary with Ensembl IDs as keys and gene symbols as values
+gene_symbol_dict = {item['query']: item.get('symbol', item['query']) for item in gene_info}
 
-for index, row in df.iterrows():
-    smiles = row[smiles_column]
-    compound_name = str(row[id_column]) 
+# Remap adata.var_names with the gene symbols
+adata.var['gene_symbols'] = [gene_symbol_dict[ens_id] for ens_id in adata.var_names]
 
-    #Convert a molecules Smiles into a mol object in RdKit and add hydrogens
-    mol = Chem.MolFromSmiles(smiles)
-    mol = Chem.AddHs(mol)
-
-    #Generate 2D coordinates of the mol object
-    AllChem.Compute2DCoords(mol)
-
-    #Generate 3D conformation of the mol object and optimize using the MMF94S force-field
-    AllChem.EmbedMolecule(mol, AllChem.ETKDG()) 
-    AllChem.MMFFOptimizeMolecule(mol, mmffVariant="MMFF94s")  
-
-    #Save the mol obj as a .sdf into the output directory
-    sdf_filename = os.path.join(current_output_dir, f"{compound_name}.sdf")
-    writer = Chem.SDWriter(sdf_filename)
-    writer.write(mol)
-    writer.close()
-
-    #Increment through the compound list
-    compound_count += 1
-
-    # After every n compounds, create a new folder
-    if compound_count % compounds_per_folder == 0:
-        folder_count += 1
-        current_output_dir = os.path.join(output_base_dir, f"batch_{folder_count}")
-        if not os.path.exists(current_output_dir):
-            os.makedirs(current_output_dir)
-
-print("Compound Conversion Complete")
-
+# Optionally set the gene symbols as var_names (so that dotplots and other functions use gene symbols)
+adata.var_names = adata.var['gene_symbols']
+adata.var_names_make_unique()
 
 
